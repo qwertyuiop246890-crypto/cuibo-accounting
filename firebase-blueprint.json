@@ -17,11 +17,12 @@
       "type": "object",
       "properties": {
         "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["JPY Cash", "Credit Card", "IC Card"] },
+        "type": { "type": "string" },
         "balance": { "type": "number" },
+        "currency": { "type": "string", "description": "Currency code like JPY, TWD, USD" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "type", "balance", "createdAt"]
+      "required": ["name", "type", "balance", "currency", "createdAt"]
     },
     "Receipt": {
       "title": "Receipt",
@@ -31,6 +32,7 @@
         "photoUrl": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
         "totalAmount": { "type": "number" },
+        "currency": { "type": "string" },
         "paymentAccountId": { "type": "string" },
         "category": { "type": "string", "enum": ["Business", "Personal"] },
         "subCategory": { "type": "string", "enum": ["Food", "Clothing", "Housing", "Transport", "Education", "Entertainment", "Other"] },

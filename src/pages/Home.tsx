@@ -209,7 +209,7 @@ export function Home() {
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <span className="font-serif font-bold text-xl text-ink">
-                      ¥{receipt.totalAmount.toLocaleString()}
+                      {receipt.currency || 'JPY'} {receipt.totalAmount.toLocaleString()}
                     </span>
                     <button 
                       onClick={(e) => handleDelete(e, receipt)}

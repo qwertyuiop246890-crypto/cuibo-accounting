@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, onSnapshot, query, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -62,6 +62,7 @@ export function ReceiptDetail() {
     paymentAccountId: '',
     category: 'Business',
     subCategory: 'Food',
+    currency: 'JPY',
     notes: '',
     photoUrl: ''
   });
@@ -116,6 +117,7 @@ export function ReceiptDetail() {
           paymentAccountId: data.paymentAccountId,
           category: data.category,
           subCategory: data.subCategory || 'Food',
+          currency: data.currency || 'JPY',
           notes: data.notes || '',
           photoUrl: data.photoUrl || ''
         });
@@ -141,6 +143,12 @@ export function ReceiptDetail() {
     }
   }, [items, pendingAiItems]);
 
+  const selectedAccount = useMemo(() => {
+    return accounts.find(a => a.id === receipt.paymentAccountId);
+  }, [accounts, receipt.paymentAccountId]);
+
+  const currencySymbol = selectedAccount?.currency || receipt.currency || 'JPY';
+
   const handleSaveReceipt = async () => {
     if (!auth.currentUser || !receipt.paymentAccountId || !receipt.date) return;
     setLoading(true);
@@ -149,8 +157,10 @@ export function ReceiptDetail() {
       const receiptId = isNew ? doc(collection(db, `users/${auth.currentUser.uid}/receipts`)).id : id!;
       const receiptRef = doc(db, `users/${auth.currentUser.uid}/receipts/${receiptId}`);
       
+      const selectedAccount = accounts.find(a => a.id === receipt.paymentAccountId);
       const receiptData = {
         ...receipt,
+        currency: selectedAccount?.currency || 'JPY',
         date: new Date(receipt.date).toISOString(),
         totalAmount: Number(receipt.totalAmount),
         createdAt: isNew ? new Date().toISOString() : ((await getDoc(receiptRef)).data()?.createdAt || new Date().toISOString())
@@ -583,10 +593,10 @@ export function ReceiptDetail() {
                   <div className="flex justify-between items-center">
                     <div className="cursor-pointer flex-1" onClick={() => startEditing(item)}>
                       <p className="font-bold text-ink">{item.name}</p>
-                      <p className="text-[10px] font-bold text-ink/50 uppercase tracking-wider">¥{item.price} x {item.quantity}</p>
+                      <p className="text-[10px] font-bold text-ink/50 uppercase tracking-wider">{currencySymbol} {item.price} x {item.quantity}</p>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="font-serif font-bold text-ink">¥{item.price * item.quantity}</span>
+                      <span className="font-serif font-bold text-ink">{currencySymbol} {(item.price * item.quantity).toLocaleString()}</span>
                       <button onClick={() => handleDeleteItem(item.id)} className="text-red-400 p-1 hover:bg-red-50 rounded-lg transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -603,10 +613,10 @@ export function ReceiptDetail() {
                     <Sparkles className="w-3 h-3 text-primary-blue" />
                     {item.name}
                   </p>
-                  <p className="text-[10px] font-bold text-primary-blue/70 uppercase tracking-wider">¥{item.price} x {item.quantity} (待儲存)</p>
+                  <p className="text-[10px] font-bold text-primary-blue/70 uppercase tracking-wider">{currencySymbol} {item.price} x {item.quantity} (待儲存)</p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="font-serif font-bold text-ink">¥{(item.price * item.quantity) || 0}</span>
+                  <span className="font-serif font-bold text-ink">{currencySymbol} {((item.price * item.quantity) || 0).toLocaleString()}</span>
                   <button onClick={() => setPendingAiItems(prev => prev.filter((_, i) => i !== idx))} className="text-red-400 p-1 hover:bg-red-50 rounded-lg transition-colors">
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -627,7 +637,7 @@ export function ReceiptDetail() {
             <div className="flex gap-4">
               <input
                 type="number"
-                placeholder="單價 (¥)"
+                placeholder={`單價 (${currencySymbol})`}
                 value={newItem.price}
                 onChange={e => setNewItem({...newItem, price: e.target.value})}
                 className="flex-1 p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink placeholder:text-ink/30"
@@ -665,7 +675,7 @@ export function ReceiptDetail() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">總金額 (¥)</label>
+              <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">總金額 ({currencySymbol})</label>
               <input
                 type="number"
                 value={receipt.totalAmount}
@@ -685,7 +695,7 @@ export function ReceiptDetail() {
             >
               <option value="">選擇支付帳戶</option>
               {accounts.map(a => (
-                <option key={a.id} value={a.id}>{a.name} (¥{a.balance})</option>
+                <option key={a.id} value={a.id}>{a.name} ({a.currency} {a.balance.toLocaleString()})</option>
               ))}
             </select>
           </div>
@@ -705,15 +715,18 @@ export function ReceiptDetail() {
             {receipt.category === 'Personal' && (
               <div>
                 <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">子類別</label>
-                <select
+                <input
+                  list="personal-categories"
                   value={receipt.subCategory}
                   onChange={e => setReceipt({...receipt, subCategory: e.target.value})}
-                  className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink appearance-none"
-                >
+                  className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink"
+                  placeholder="輸入或選擇類別"
+                />
+                <datalist id="personal-categories">
                   {['Food', 'Clothing', 'Housing', 'Transport', 'Education', 'Entertainment', 'Other'].map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+                    <option key={cat} value={cat} />
                   ))}
-                </select>
+                </datalist>
               </div>
             )}
           </div>

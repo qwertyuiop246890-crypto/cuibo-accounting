@@ -9,7 +9,11 @@ export function Settings() {
   
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountType, setNewAccountType] = useState('JPY Cash');
+  const [newAccountCurrency, setNewAccountCurrency] = useState('JPY');
   const [newAccountBalance, setNewAccountBalance] = useState('');
+
+  const existingTypes = Array.from(new Set(accounts.map(a => a.type || 'JPY Cash')));
+  const existingCurrencies = Array.from(new Set(accounts.map(a => a.currency || 'JPY')));
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -33,6 +37,7 @@ export function Settings() {
       name: newAccountName,
       type: newAccountType,
       balance: Number(newAccountBalance),
+      currency: newAccountCurrency,
       createdAt: new Date().toISOString()
     });
     
@@ -80,27 +85,52 @@ export function Settings() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-ink/40 uppercase tracking-widest ml-4">類型</label>
-              <select
+              <input
+                list="account-types"
                 value={newAccountType}
                 onChange={(e) => setNewAccountType(e.target.value)}
-                className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue/20 outline-none text-ink font-medium appearance-none"
-              >
-                <option value="JPY Cash">日幣現金</option>
-                <option value="Credit Card">信用卡</option>
-                <option value="IC Card">交通卡</option>
-              </select>
+                placeholder="選擇或輸入類型"
+                className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue/20 outline-none text-ink font-medium"
+              />
+              <datalist id="account-types">
+                {existingTypes.map(type => (
+                  <option key={type} value={type} />
+                ))}
+                {!existingTypes.includes('JPY Cash') && <option value="JPY Cash" />}
+                {!existingTypes.includes('Credit Card') && <option value="Credit Card" />}
+                {!existingTypes.includes('IC Card') && <option value="IC Card" />}
+              </datalist>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-ink/40 uppercase tracking-widest ml-4">初始餘額 (¥)</label>
+              <label className="text-[10px] font-bold text-ink/40 uppercase tracking-widest ml-4">幣別</label>
               <input
-                type="number"
-                placeholder="0"
-                value={newAccountBalance}
-                onChange={(e) => setNewAccountBalance(e.target.value)}
+                list="account-currencies"
+                value={newAccountCurrency}
+                onChange={(e) => setNewAccountCurrency(e.target.value)}
+                placeholder="如: JPY, TWD"
                 className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue/20 outline-none text-ink font-medium"
-                required
               />
+              <datalist id="account-currencies">
+                {existingCurrencies.map(curr => (
+                  <option key={curr} value={curr} />
+                ))}
+                {!existingCurrencies.includes('JPY') && <option value="JPY" />}
+                {!existingCurrencies.includes('TWD') && <option value="TWD" />}
+                {!existingCurrencies.includes('USD') && <option value="USD" />}
+              </datalist>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-ink/40 uppercase tracking-widest ml-4">初始餘額</label>
+            <input
+              type="number"
+              placeholder="0"
+              value={newAccountBalance}
+              onChange={(e) => setNewAccountBalance(e.target.value)}
+              className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue/20 outline-none text-ink font-medium"
+              required
+            />
           </div>
           
           <button type="submit" className="w-full bg-primary-blue text-white font-bold p-4 rounded-2xl shadow-lg shadow-primary-blue/20 hover:bg-primary-blue/90 flex items-center justify-center gap-2 transition-all active:scale-95 uppercase tracking-widest text-xs">
@@ -117,7 +147,7 @@ export function Settings() {
                 <p className="font-serif font-bold text-ink text-lg">{account.name}</p>
                 <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-ink/40 mt-1">
                   <span className="bg-divider px-2 py-0.5 rounded-full text-ink/60">{account.type}</span>
-                  <span className="text-primary-blue">¥{account.balance.toLocaleString()}</span>
+                  <span className="text-primary-blue">{account.currency || 'JPY'} {account.balance.toLocaleString()}</span>
                 </div>
               </div>
               <button 
