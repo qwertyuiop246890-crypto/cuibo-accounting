@@ -8,7 +8,8 @@ import { Calendar, Filter, PieChart as PieChartIcon } from 'lucide-react';
 export function Dashboard() {
   const [receipts, setReceipts] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [dateRange, setDateRange] = useState<'today' | '7days' | '30days' | 'all'>('30days');
+  const [startDate, setStartDate] = useState<string>(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -25,18 +26,14 @@ export function Dashboard() {
   }, []);
 
   const filteredReceipts = useMemo(() => {
-    const now = new Date();
-    let start = new Date(0);
-    
-    if (dateRange === 'today') start = startOfDay(now);
-    if (dateRange === '7days') start = subDays(startOfDay(now), 7);
-    if (dateRange === '30days') start = subDays(startOfDay(now), 30);
+    const start = startOfDay(new Date(startDate));
+    const end = endOfDay(new Date(endDate));
 
     return receipts.filter(r => {
       const rDate = new Date(r.date);
-      return isWithinInterval(rDate, { start, end: endOfDay(now) });
+      return isWithinInterval(rDate, { start, end });
     });
-  }, [receipts, dateRange]);
+  }, [receipts, startDate, endDate]);
 
   const stats = useMemo(() => {
     let total = 0;
@@ -68,20 +65,25 @@ export function Dashboard() {
 
   return (
     <div className="p-4 max-w-md mx-auto space-y-6 bg-background min-h-screen">
-      <header className="flex justify-between items-center mb-6">
+      <header className="flex flex-col gap-4 mb-6">
         <h1 className="text-2xl font-serif font-bold text-ink tracking-tight">報表與分析</h1>
-        <div className="flex items-center gap-2 bg-card-white px-4 py-2 rounded-full shadow-sm border border-divider">
-          <Calendar className="w-4 h-4 text-ink/40" />
-          <select 
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value as any)}
-            className="bg-transparent text-xs font-bold text-ink outline-none appearance-none cursor-pointer uppercase tracking-widest"
-          >
-            <option value="today">今日</option>
-            <option value="7days">近 7 天</option>
-            <option value="30days">近 30 天</option>
-            <option value="all">全部時間</option>
-          </select>
+        <div className="flex items-center gap-2 bg-card-white px-4 py-3 rounded-3xl shadow-sm border border-divider overflow-x-auto">
+          <Calendar className="w-4 h-4 text-ink/40 flex-shrink-0" />
+          <div className="flex items-center gap-2 text-[10px] font-bold text-ink/40 uppercase tracking-widest whitespace-nowrap">
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-background rounded-lg p-1.5 px-2 outline-none focus:ring-2 focus:ring-primary-blue font-bold text-ink"
+            />
+            <span>至</span>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-background rounded-lg p-1.5 px-2 outline-none focus:ring-2 focus:ring-primary-blue font-bold text-ink"
+            />
+          </div>
         </div>
       </header>
 
