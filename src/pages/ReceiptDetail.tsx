@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, onSnapshot, query, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Camera, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Sparkles } from 'lucide-react';
+import { Camera, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Sparkles, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { GoogleGenAI, Type } from '@google/genai';
 import { Modal } from '../components/ui/Modal';
+import { motion, AnimatePresence } from 'motion/react';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -65,7 +66,12 @@ export function ReceiptDetail() {
     photoUrl: ''
   });
 
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editItemData, setEditItemData] = useState({ name: '', price: '', quantity: '' });
   const [newItem, setNewItem] = useState({ name: '', price: '', quantity: '1', notes: '' });
+  const [showFullImage, setShowFullImage] = useState(false);
+  const [originalTotalAmount, setOriginalTotalAmount] = useState(0);
+  const [originalAccountId, setOriginalAccountId] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -113,6 +119,8 @@ export function ReceiptDetail() {
           notes: data.notes || '',
           photoUrl: data.photoUrl || ''
         });
+        setOriginalTotalAmount(data.totalAmount);
+        setOriginalAccountId(data.paymentAccountId);
       }
     };
 
@@ -165,10 +173,30 @@ export function ReceiptDetail() {
         setPendingAiItems([]);
       }
 
-      // Update account balance if new
+      // Update account balance
       if (isNew) {
         const accountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
         await updateDoc(accountRef, { balance: increment(-Number(receipt.totalAmount)) });
+      } else {
+        // Handle changes in existing receipt
+        const diff = Number(receipt.totalAmount) - originalTotalAmount;
+        
+        if (receipt.paymentAccountId === originalAccountId) {
+          // Same account, just update the difference
+          if (diff !== 0) {
+            const accountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
+            await updateDoc(accountRef, { balance: increment(-diff) });
+          }
+        } else {
+          // Account changed: restore old, deduct from new
+          const oldAccountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${originalAccountId}`);
+          const newAccountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
+          
+          await updateDoc(oldAccountRef, { balance: increment(originalTotalAmount) });
+          await updateDoc(newAccountRef, { balance: increment(-Number(receipt.totalAmount)) });
+        }
+        setOriginalTotalAmount(Number(receipt.totalAmount));
+        setOriginalAccountId(receipt.paymentAccountId);
       }
 
       if (isNew) {
@@ -221,9 +249,38 @@ export function ReceiptDetail() {
     setNewItem({ name: '', price: '', quantity: '1', notes: '' });
   };
 
+  const handleUpdateItem = async (itemId: string) => {
+    if (!auth.currentUser || !id) return;
+    const itemRef = doc(db, `users/${auth.currentUser.uid}/receipts/${id}/items/${itemId}`);
+    await updateDoc(itemRef, {
+      name: editItemData.name,
+      price: Number(editItemData.price),
+      quantity: Number(editItemData.quantity)
+    });
+    setEditingItemId(null);
+  };
+
+  const startEditing = (item: any) => {
+    setEditingItemId(item.id);
+    setEditItemData({
+      name: item.name,
+      price: item.price.toString(),
+      quantity: item.quantity.toString()
+    });
+  };
+
   const handleDeleteItem = async (itemId: string) => {
     if (!auth.currentUser || !id) return;
-    await deleteDoc(doc(db, `users/${auth.currentUser.uid}/receipts/${id}/items/${itemId}`));
+    setModalConfig({
+      isOpen: true,
+      title: '確認刪除',
+      message: '確定要刪除此項目嗎？',
+      type: 'confirm',
+      onConfirm: async () => {
+        const itemRef = doc(db, `users/${auth.currentUser!.uid}/receipts/${id}/items/${itemId}`);
+        await deleteDoc(itemRef);
+      }
+    });
   };
 
   const handlePhotoUpload = () => {
@@ -435,14 +492,43 @@ export function ReceiptDetail() {
           )}
 
           {receipt.photoUrl && !uploading && (
-            <div className="w-full h-48 bg-background rounded-3xl border-2 border-dashed border-divider flex flex-col items-center justify-center overflow-hidden relative group">
+            <div 
+              className="w-full h-48 bg-background rounded-3xl border-2 border-dashed border-divider flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer"
+              onClick={() => setShowFullImage(true)}
+            >
               <img src={receipt.photoUrl} alt="Receipt" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               <div className="absolute inset-0 bg-ink/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Camera className="w-8 h-8 text-white" />
+                <Sparkles className="w-8 h-8 text-white" />
+                <span className="text-white font-bold ml-2">點擊放大</span>
               </div>
             </div>
           )}
         </div>
+
+        {/* Full Screen Image Modal */}
+        <AnimatePresence>
+          {showFullImage && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+              onClick={() => setShowFullImage(false)}
+            >
+              <motion.img 
+                initial={{ scale: 0.9 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.9 }}
+                src={receipt.photoUrl} 
+                className="max-w-full max-h-full object-contain rounded-xl"
+                alt="Full Receipt"
+              />
+              <button className="absolute top-6 right-6 text-white p-2 bg-white/10 rounded-full">
+                <X className="w-6 h-6" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Items Section */}
         <div className="bg-card-white p-6 rounded-3xl shadow-sm border border-divider space-y-6">
@@ -453,17 +539,60 @@ export function ReceiptDetail() {
           
           <div className="space-y-3">
             {items.map(item => (
-              <div key={item.id} className="flex justify-between items-center p-4 bg-background rounded-2xl border border-divider">
-                <div>
-                  <p className="font-bold text-ink">{item.name}</p>
-                  <p className="text-[10px] font-bold text-ink/50 uppercase tracking-wider">¥{item.price} x {item.quantity}</p>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="font-serif font-bold text-ink">¥{item.price * item.quantity}</span>
-                  <button onClick={() => handleDeleteItem(item.id)} className="text-red-400 p-1 hover:bg-red-50 rounded-lg transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+              <div key={item.id} className="p-4 bg-background rounded-2xl border border-divider">
+                {editingItemId === item.id ? (
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={editItemData.name}
+                      onChange={e => setEditItemData({...editItemData, name: e.target.value})}
+                      className="w-full p-2 bg-white border border-divider rounded-xl outline-none text-ink font-bold"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={editItemData.price}
+                        onChange={e => setEditItemData({...editItemData, price: e.target.value})}
+                        className="flex-1 p-2 bg-white border border-divider rounded-xl outline-none text-ink font-bold"
+                        placeholder="單價"
+                      />
+                      <input
+                        type="number"
+                        value={editItemData.quantity}
+                        onChange={e => setEditItemData({...editItemData, quantity: e.target.value})}
+                        className="w-20 p-2 bg-white border border-divider rounded-xl outline-none text-ink font-bold text-center"
+                        placeholder="數量"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleUpdateItem(item.id)}
+                        className="flex-1 bg-primary-blue text-white font-bold py-2 rounded-xl text-xs"
+                      >
+                        儲存
+                      </button>
+                      <button 
+                        onClick={() => setEditingItemId(null)}
+                        className="flex-1 bg-ink/10 text-ink font-bold py-2 rounded-xl text-xs"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center">
+                    <div className="cursor-pointer flex-1" onClick={() => startEditing(item)}>
+                      <p className="font-bold text-ink">{item.name}</p>
+                      <p className="text-[10px] font-bold text-ink/50 uppercase tracking-wider">¥{item.price} x {item.quantity}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-serif font-bold text-ink">¥{item.price * item.quantity}</span>
+                      <button onClick={() => handleDeleteItem(item.id)} className="text-red-400 p-1 hover:bg-red-50 rounded-lg transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
 
