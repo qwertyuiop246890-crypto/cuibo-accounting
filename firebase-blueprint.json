@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "PaymentAccount": {
+      "title": "Payment Account",
+      "description": "A payment method like JPY Cash, Credit Card, or IC Card.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["JPY Cash", "Credit Card", "IC Card"] },
+        "balance": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "balance", "createdAt"]
+    },
+    "Receipt": {
+      "title": "Receipt",
+      "description": "A receipt for a purchase.",
+      "type": "object",
+      "properties": {
+        "photoUrl": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "totalAmount": { "type": "number" },
+        "paymentAccountId": { "type": "string" },
+        "category": { "type": "string", "enum": ["Business", "Personal"] },
+        "subCategory": { "type": "string", "enum": ["Food", "Clothing", "Housing", "Transport", "Education", "Entertainment", "Other"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "totalAmount", "paymentAccountId", "category", "createdAt"]
+    },
+    "Item": {
+      "title": "Item",
+      "description": "An item on a receipt.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "quantity": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "price", "quantity", "createdAt"]
+    },
+    "Transfer": {
+      "title": "Transfer",
+      "description": "An internal transfer between payment accounts.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date-time" },
+        "amount": { "type": "number" },
+        "fromAccountId": { "type": "string" },
+        "toAccountId": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "amount", "fromAccountId", "toAccountId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles."
+    },
+    "/users/{userId}/paymentAccounts/{accountId}": {
+      "schema": { "$ref": "#/entities/PaymentAccount" },
+      "description": "Payment accounts created by the user."
+    },
+    "/users/{userId}/receipts/{receiptId}": {
+      "schema": { "$ref": "#/entities/Receipt" },
+      "description": "Receipts created by the user."
+    },
+    "/users/{userId}/receipts/{receiptId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/Item" },
+      "description": "Items on a receipt."
+    },
+    "/users/{userId}/transfers/{transferId}": {
+      "schema": { "$ref": "#/entities/Transfer" },
+      "description": "Transfers created by the user."
+    }
+  }
+}

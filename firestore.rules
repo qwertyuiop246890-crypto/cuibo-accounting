@@ -1,0 +1,129 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(allowedFields) {
+      return request.resource.data.keys().hasOnly(allowedFields);
+    }
+
+    function hasRequiredFields(requiredFields) {
+      return request.resource.data.keys().hasAll(requiredFields);
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(val, minLen, maxLen) {
+      return val == null || (val is string && val.size() >= minLen && val.size() <= maxLen);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['email', 'displayName', 'photoURL']) &&
+             hasRequiredFields(['email']) &&
+             isValidString(data.email, 3, 255) &&
+             isValidOptionalString(data.get('displayName', null), 0, 100) &&
+             isValidOptionalString(data.get('photoURL', null), 0, 1000);
+    }
+
+    function isValidPaymentAccount() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['name', 'type', 'balance', 'createdAt']) &&
+             hasRequiredFields(['name', 'type', 'balance', 'createdAt']) &&
+             isValidString(data.name, 1, 100) &&
+             data.type in ['JPY Cash', 'Credit Card', 'IC Card'] &&
+             data.balance is number &&
+             data.createdAt is string;
+    }
+
+    function isValidReceipt() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['photoUrl', 'date', 'totalAmount', 'paymentAccountId', 'category', 'subCategory', 'notes', 'createdAt']) &&
+             hasRequiredFields(['date', 'totalAmount', 'paymentAccountId', 'category', 'createdAt']) &&
+             isValidOptionalString(data.get('photoUrl', null), 0, 5000000) &&
+             data.date is string &&
+             data.totalAmount is number &&
+             isValidString(data.paymentAccountId, 1, 100) &&
+             data.category in ['Business', 'Personal'] &&
+             (data.category == 'Business' || data.get('subCategory', null) in ['Food', 'Clothing', 'Housing', 'Transport', 'Education', 'Entertainment', 'Other']) &&
+             isValidOptionalString(data.get('notes', null), 0, 1000) &&
+             data.createdAt is string;
+    }
+
+    function isValidItem() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['name', 'price', 'quantity', 'notes', 'createdAt']) &&
+             hasRequiredFields(['name', 'price', 'quantity', 'createdAt']) &&
+             isValidString(data.name, 1, 200) &&
+             data.price is number &&
+             data.quantity is number &&
+             isValidOptionalString(data.get('notes', null), 0, 1000) &&
+             data.createdAt is string;
+    }
+
+    function isValidTransfer() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['date', 'amount', 'fromAccountId', 'toAccountId', 'notes', 'createdAt']) &&
+             hasRequiredFields(['date', 'amount', 'fromAccountId', 'toAccountId', 'createdAt']) &&
+             data.date is string &&
+             data.amount is number &&
+             isValidString(data.fromAccountId, 1, 100) &&
+             isValidString(data.toAccountId, 1, 100) &&
+             isValidOptionalString(data.get('notes', null), 0, 1000) &&
+             data.createdAt is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser();
+
+      match /paymentAccounts/{accountId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPaymentAccount();
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+
+      match /receipts/{receiptId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidReceipt();
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+
+        match /items/{itemId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) && isValidItem();
+          allow update: if isOwner(userId);
+          allow delete: if isOwner(userId);
+        }
+      }
+
+      match /transfers/{transferId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTransfer();
+        allow update: if isOwner(userId) && isValidTransfer() && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
