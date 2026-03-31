@@ -80,9 +80,15 @@ export function Home() {
       type: 'confirm',
       onConfirm: async () => {
         try {
-          // Restore account balance
-          const accountRef = doc(db, `users/${auth.currentUser!.uid}/paymentAccounts/${receipt.paymentAccountId}`);
-          await updateDoc(accountRef, { balance: increment(receipt.totalAmount) });
+          // Restore account balance if account exists
+          if (receipt.paymentAccountId) {
+            const accountRef = doc(db, `users/${auth.currentUser!.uid}/paymentAccounts/${receipt.paymentAccountId}`);
+            const accountSnap = await getDoc(accountRef);
+            
+            if (accountSnap.exists()) {
+              await updateDoc(accountRef, { balance: increment(receipt.totalAmount) });
+            }
+          }
 
           // Delete receipt
           await deleteDoc(doc(db, `users/${auth.currentUser!.uid}/receipts/${receipt.id}`));
