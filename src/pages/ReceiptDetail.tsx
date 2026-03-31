@@ -68,8 +68,8 @@ export function ReceiptDetail() {
   });
 
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [editItemData, setEditItemData] = useState({ name: '', price: '', quantity: '' });
-  const [newItem, setNewItem] = useState({ name: '', price: '', quantity: '1', notes: '' });
+  const [editItemData, setEditItemData] = useState({ name: '', translatedName: '', price: '', quantity: '' });
+  const [newItem, setNewItem] = useState({ name: '', translatedName: '', price: '', quantity: '1', notes: '' });
   const [showFullImage, setShowFullImage] = useState(false);
   const [originalTotalAmount, setOriginalTotalAmount] = useState(0);
   const [originalAccountId, setOriginalAccountId] = useState('');
@@ -174,6 +174,7 @@ export function ReceiptDetail() {
           const itemRef = doc(collection(db, `users/${auth.currentUser.uid}/receipts/${receiptId}/items`));
           await setDoc(itemRef, {
             name: item.name || 'Unknown Item',
+            translatedName: item.translatedName || '',
             price: Number(item.price) || 0,
             quantity: Number(item.quantity) || 1,
             notes: item.notes || '',
@@ -239,24 +240,26 @@ export function ReceiptDetail() {
     if (isNew) {
       setPendingAiItems(prev => [...prev, {
         name: newItem.name,
+        translatedName: newItem.translatedName,
         price: Number(newItem.price),
         quantity: Number(newItem.quantity),
         notes: newItem.notes
       }]);
-      setNewItem({ name: '', price: '', quantity: '1', notes: '' });
+      setNewItem({ name: '', translatedName: '', price: '', quantity: '1', notes: '' });
       return;
     }
 
     const itemRef = doc(collection(db, `users/${auth.currentUser.uid}/receipts/${id}/items`));
     await setDoc(itemRef, {
       name: newItem.name,
+      translatedName: newItem.translatedName,
       price: Number(newItem.price),
       quantity: Number(newItem.quantity),
       notes: newItem.notes,
       createdAt: new Date().toISOString()
     });
 
-    setNewItem({ name: '', price: '', quantity: '1', notes: '' });
+    setNewItem({ name: '', translatedName: '', price: '', quantity: '1', notes: '' });
   };
 
   const handleUpdateItem = async (itemId: string) => {
@@ -264,6 +267,7 @@ export function ReceiptDetail() {
     const itemRef = doc(db, `users/${auth.currentUser.uid}/receipts/${id}/items/${itemId}`);
     await updateDoc(itemRef, {
       name: editItemData.name,
+      translatedName: editItemData.translatedName,
       price: Number(editItemData.price),
       quantity: Number(editItemData.quantity)
     });
@@ -274,6 +278,7 @@ export function ReceiptDetail() {
     setEditingItemId(item.id);
     setEditItemData({
       name: item.name,
+      translatedName: item.translatedName || '',
       price: item.price.toString(),
       quantity: item.quantity.toString()
     });
@@ -327,7 +332,8 @@ export function ReceiptDetail() {
       const mimeType = compressedDataUrl.split(';')[0].split(':')[1];
 
       const prompt = `
-        Analyze this receipt. Extract the date (YYYY-MM-DDTHH:mm format), total amount, and a list of items (name, price, quantity). 
+        Analyze this receipt. Extract the date (YYYY-MM-DDTHH:mm format), total amount, and a list of items.
+        For each item, extract the original name (name) and translate it to Traditional Chinese (translatedName).
         If you cannot find a date, omit it. If you cannot find items, return an empty array.
       `;
 
@@ -358,7 +364,8 @@ export function ReceiptDetail() {
                 items: {
                   type: Type.OBJECT,
                   properties: {
-                    name: { type: Type.STRING },
+                    name: { type: Type.STRING, description: "Original name from receipt" },
+                    translatedName: { type: Type.STRING, description: "Traditional Chinese translation" },
                     price: { type: Type.NUMBER },
                     quantity: { type: Type.NUMBER }
                   }
@@ -386,6 +393,7 @@ export function ReceiptDetail() {
       if (result.items && result.items.length > 0) {
         const newItems = result.items.map((item: any) => ({
           name: item.name || 'Unknown Item',
+          translatedName: item.translatedName || '',
           price: Number(item.price) || 0,
           quantity: Number(item.quantity) || 1,
           notes: 'AI 自動辨識'
@@ -557,6 +565,14 @@ export function ReceiptDetail() {
                       value={editItemData.name}
                       onChange={e => setEditItemData({...editItemData, name: e.target.value})}
                       className="w-full p-2 bg-white border border-divider rounded-xl outline-none text-ink font-bold"
+                      placeholder="原文名稱"
+                    />
+                    <input
+                      type="text"
+                      value={editItemData.translatedName}
+                      onChange={e => setEditItemData({...editItemData, translatedName: e.target.value})}
+                      className="w-full p-2 bg-white border border-divider rounded-xl outline-none text-ink/60 text-xs"
+                      placeholder="中文翻譯"
                     />
                     <div className="flex gap-2">
                       <input
@@ -593,6 +609,9 @@ export function ReceiptDetail() {
                   <div className="flex justify-between items-center">
                     <div className="cursor-pointer flex-1" onClick={() => startEditing(item)}>
                       <p className="font-bold text-ink">{item.name}</p>
+                      {item.translatedName && (
+                        <p className="text-[10px] font-bold text-ink/40 mb-1">{item.translatedName}</p>
+                      )}
                       <p className="text-[10px] font-bold text-ink/50 uppercase tracking-wider">{currencySymbol} {item.price} x {item.quantity}</p>
                     </div>
                     <div className="flex items-center gap-4">
@@ -613,6 +632,9 @@ export function ReceiptDetail() {
                     <Sparkles className="w-3 h-3 text-primary-blue" />
                     {item.name}
                   </p>
+                  {item.translatedName && (
+                    <p className="text-[10px] font-bold text-ink/40 mb-1 ml-4">{item.translatedName}</p>
+                  )}
                   <p className="text-[10px] font-bold text-primary-blue/70 uppercase tracking-wider">{currencySymbol} {item.price} x {item.quantity} (待儲存)</p>
                 </div>
                 <div className="flex items-center gap-4">
@@ -626,14 +648,23 @@ export function ReceiptDetail() {
           </div>
 
           <form onSubmit={handleAddItem} className="pt-6 border-t border-divider space-y-4">
-            <input
-              type="text"
-              placeholder="品名 (手動新增)"
-              value={newItem.name}
-              onChange={e => setNewItem({...newItem, name: e.target.value})}
-              className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink placeholder:text-ink/30"
-              required
-            />
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="品名 (原文)"
+                value={newItem.name}
+                onChange={e => setNewItem({...newItem, name: e.target.value})}
+                className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink placeholder:text-ink/30"
+                required
+              />
+              <input
+                type="text"
+                placeholder="中文翻譯 (選填)"
+                value={newItem.translatedName}
+                onChange={e => setNewItem({...newItem, translatedName: e.target.value})}
+                className="w-full p-3 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none text-sm text-ink/60 placeholder:text-ink/20"
+              />
+            </div>
             <div className="flex gap-4">
               <input
                 type="number"
