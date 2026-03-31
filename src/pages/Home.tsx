@@ -2,9 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, getDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { format } from 'date-fns';
-import { Camera, Receipt as ReceiptIcon, CreditCard, Trash2, PieChart as PieChartIcon } from 'lucide-react';
+import { Camera, Receipt as ReceiptIcon, CreditCard, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { Modal } from '../components/ui/Modal';
 
 export function Home() {
@@ -110,18 +109,6 @@ export function Home() {
     ? receipts.filter(r => r.date.startsWith(selectedDate))
     : receipts;
 
-  const personalStats = useMemo(() => {
-    const personal = receipts.filter(r => r.category === 'Personal');
-    const totals: Record<string, number> = {};
-    
-    personal.forEach(r => {
-      const cat = r.subCategory || 'Other';
-      totals[cat] = (totals[cat] || 0) + r.totalAmount;
-    });
-
-    return Object.entries(totals).map(([name, value]) => ({ name, value }));
-  }, [receipts]);
-
   const COLORS = ['#AEC8DB', '#957E6B', '#D9C5B2', '#B8C5D6', '#E5D3C5', '#C4D7E0', '#A3B18A'];
 
   return (
@@ -154,40 +141,6 @@ export function Home() {
           <span className="text-lg font-bold tracking-wider">拍照新增單據</span>
         </button>
       </div>
-
-      {/* Statistics Section */}
-      {personalStats.length > 0 && (
-        <div className="mb-8 bg-card-white p-6 rounded-3xl shadow-sm border border-divider">
-          <h2 className="text-sm font-bold text-ink flex items-center gap-2 mb-4 uppercase tracking-widest">
-            <PieChartIcon className="w-4 h-4 text-primary-blue" />
-            私人開銷佔比
-          </h2>
-          <div className="h-48 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={personalStats}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={40}
-                  outerRadius={60}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {personalStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number) => `¥${value.toLocaleString()}`}
-                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 4px 20px rgba(149, 126, 107, 0.1)', backgroundColor: '#FFFFFF' }}
-                />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
       <div className="space-y-4">
         <div className="flex justify-between items-center bg-card-white p-4 rounded-2xl border border-divider shadow-sm">

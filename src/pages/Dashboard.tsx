@@ -3,7 +3,7 @@ import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { format, subDays, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
-import { Calendar, Filter } from 'lucide-react';
+import { Calendar, Filter, PieChart as PieChartIcon } from 'lucide-react';
 
 export function Dashboard() {
   const [receipts, setReceipts] = useState<any[]>([]);
@@ -43,19 +43,25 @@ export function Dashboard() {
     let business = 0;
     let personal = 0;
     const paymentUsage: Record<string, number> = {};
+    const personalUsage: Record<string, number> = {};
 
     filteredReceipts.forEach(r => {
       total += r.totalAmount;
       if (r.category === 'Business') business += r.totalAmount;
-      if (r.category === 'Personal') personal += r.totalAmount;
+      if (r.category === 'Personal') {
+        personal += r.totalAmount;
+        const subCat = r.subCategory || 'Other';
+        personalUsage[subCat] = (personalUsage[subCat] || 0) + r.totalAmount;
+      }
 
       const accName = accounts.find(a => a.id === r.paymentAccountId)?.name || 'Unknown';
       paymentUsage[accName] = (paymentUsage[accName] || 0) + r.totalAmount;
     });
 
     const paymentData = Object.entries(paymentUsage).map(([name, value]) => ({ name, value }));
+    const personalData = Object.entries(personalUsage).map(([name, value]) => ({ name, value }));
 
-    return { total, business, personal, paymentData };
+    return { total, business, personal, paymentData, personalData };
   }, [filteredReceipts, accounts]);
 
   const COLORS = ['#AEC8DB', '#957E6B', '#D9C5B2', '#B8C5D6', '#E5D3C5', '#C4D7E0', '#A3B18A'];
@@ -133,6 +139,45 @@ export function Dashboard() {
         ) : (
           <div className="h-48 flex items-center justify-center text-ink/30 text-sm font-medium">
             該期間尚無支出紀錄
+          </div>
+        )}
+      </div>
+
+      {/* Personal Expense Breakdown Chart */}
+      <div className="bg-card-white p-8 rounded-[40px] shadow-sm border border-divider">
+        <h2 className="text-lg font-serif font-bold text-ink mb-8 flex items-center gap-2 uppercase tracking-widest">
+          <PieChartIcon className="w-5 h-5 text-primary-blue" />
+          私人開銷佔比
+        </h2>
+        
+        {stats.personalData.length > 0 ? (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={stats.personalData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {stats.personalData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: number) => `¥${value.toLocaleString()}`}
+                  contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 4px 20px rgba(149, 126, 107, 0.1)', backgroundColor: '#FFFFFF' }}
+                />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '20px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-48 flex items-center justify-center text-ink/30 text-sm font-medium">
+            該期間尚無私人支出紀錄
           </div>
         )}
       </div>
