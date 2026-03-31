@@ -46,7 +46,8 @@
       "description": "An item on a receipt.",
       "type": "object",
       "properties": {
-        "name": { "type": "string" },
+        "name": { "type": "string", "description": "Original name from receipt" },
+        "translatedName": { "type": "string", "description": "Traditional Chinese translation" },
         "price": { "type": "number" },
         "quantity": { "type": "number" },
         "notes": { "type": "string" },
