@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, onSnapshot, query, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Camera, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Sparkles, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -98,6 +99,8 @@ export function ReceiptDetail() {
     // Fetch Accounts
     const unsubAccounts = onSnapshot(collection(db, `users/${auth.currentUser.uid}/paymentAccounts`), (snap) => {
       setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/paymentAccounts`);
     });
 
     return () => { unsubAccounts(); };
@@ -128,6 +131,8 @@ export function ReceiptDetail() {
 
     const unsubItems = onSnapshot(collection(db, `users/${auth.currentUser.uid}/receipts/${id}/items`), (snap) => {
       setItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/receipts/${id}/items`);
     });
 
     fetchReceipt();
@@ -166,20 +171,28 @@ export function ReceiptDetail() {
         createdAt: isNew ? new Date().toISOString() : ((await getDoc(receiptRef)).data()?.createdAt || new Date().toISOString())
       };
 
-      await setDoc(receiptRef, receiptData, { merge: true });
+      try {
+        await setDoc(receiptRef, receiptData, { merge: true });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `users/${auth.currentUser.uid}/receipts/${receiptId}`);
+      }
 
       // Save pending items
       if (pendingAiItems.length > 0) {
         for (const item of pendingAiItems) {
           const itemRef = doc(collection(db, `users/${auth.currentUser.uid}/receipts/${receiptId}/items`));
-          await setDoc(itemRef, {
-            name: item.name || 'Unknown Item',
-            translatedName: item.translatedName || '',
-            price: Number(item.price) || 0,
-            quantity: Number(item.quantity) || 1,
-            notes: item.notes || '',
-            createdAt: new Date().toISOString()
-          });
+          try {
+            await setDoc(itemRef, {
+              name: item.name || 'Unknown Item',
+              translatedName: item.translatedName || '',
+              price: Number(item.price) || 0,
+              quantity: Number(item.quantity) || 1,
+              notes: item.notes || '',
+              createdAt: new Date().toISOString()
+            });
+          } catch (error) {
+            handleFirestoreError(error, OperationType.WRITE, `users/${auth.currentUser.uid}/receipts/${receiptId}/items`);
+          }
         }
         setPendingAiItems([]);
       }
@@ -187,7 +200,11 @@ export function ReceiptDetail() {
       // Update account balance
       if (isNew) {
         const accountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
-        await updateDoc(accountRef, { balance: increment(-Number(receipt.totalAmount)) });
+        try {
+          await updateDoc(accountRef, { balance: increment(-Number(receipt.totalAmount)) });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
+        }
       } else {
         // Handle changes in existing receipt
         const diff = Number(receipt.totalAmount) - originalTotalAmount;
@@ -196,15 +213,23 @@ export function ReceiptDetail() {
           // Same account, just update the difference
           if (diff !== 0) {
             const accountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
-            await updateDoc(accountRef, { balance: increment(-diff) });
+            try {
+              await updateDoc(accountRef, { balance: increment(-diff) });
+            } catch (error) {
+              handleFirestoreError(error, OperationType.UPDATE, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
+            }
           }
         } else {
           // Account changed: restore old, deduct from new
           const oldAccountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${originalAccountId}`);
           const newAccountRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${receipt.paymentAccountId}`);
           
-          await updateDoc(oldAccountRef, { balance: increment(originalTotalAmount) });
-          await updateDoc(newAccountRef, { balance: increment(-Number(receipt.totalAmount)) });
+          try {
+            await updateDoc(oldAccountRef, { balance: increment(originalTotalAmount) });
+            await updateDoc(newAccountRef, { balance: increment(-Number(receipt.totalAmount)) });
+          } catch (error) {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${auth.currentUser.uid}/paymentAccounts`);
+          }
         }
         setOriginalTotalAmount(Number(receipt.totalAmount));
         setOriginalAccountId(receipt.paymentAccountId);
@@ -250,14 +275,18 @@ export function ReceiptDetail() {
     }
 
     const itemRef = doc(collection(db, `users/${auth.currentUser.uid}/receipts/${id}/items`));
-    await setDoc(itemRef, {
-      name: newItem.name,
-      translatedName: newItem.translatedName,
-      price: Number(newItem.price),
-      quantity: Number(newItem.quantity),
-      notes: newItem.notes,
-      createdAt: new Date().toISOString()
-    });
+    try {
+      await setDoc(itemRef, {
+        name: newItem.name,
+        translatedName: newItem.translatedName,
+        price: Number(newItem.price),
+        quantity: Number(newItem.quantity),
+        notes: newItem.notes,
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${auth.currentUser.uid}/receipts/${id}/items`);
+    }
 
     setNewItem({ name: '', translatedName: '', price: '', quantity: '1', notes: '' });
   };
@@ -265,12 +294,16 @@ export function ReceiptDetail() {
   const handleUpdateItem = async (itemId: string) => {
     if (!auth.currentUser || !id) return;
     const itemRef = doc(db, `users/${auth.currentUser.uid}/receipts/${id}/items/${itemId}`);
-    await updateDoc(itemRef, {
-      name: editItemData.name,
-      translatedName: editItemData.translatedName,
-      price: Number(editItemData.price),
-      quantity: Number(editItemData.quantity)
-    });
+    try {
+      await updateDoc(itemRef, {
+        name: editItemData.name,
+        translatedName: editItemData.translatedName,
+        price: Number(editItemData.price),
+        quantity: Number(editItemData.quantity)
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${auth.currentUser.uid}/receipts/${id}/items/${itemId}`);
+    }
     setEditingItemId(null);
   };
 
@@ -293,7 +326,11 @@ export function ReceiptDetail() {
       type: 'confirm',
       onConfirm: async () => {
         const itemRef = doc(db, `users/${auth.currentUser!.uid}/receipts/${id}/items/${itemId}`);
-        await deleteDoc(itemRef);
+        try {
+          await deleteDoc(itemRef);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.DELETE, `users/${auth.currentUser?.uid}/receipts/${id}/items/${itemId}`);
+        }
       }
     });
   };

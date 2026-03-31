@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, getDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { format } from 'date-fns';
 import { Camera, Receipt as ReceiptIcon, CreditCard, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -46,9 +47,13 @@ export function Home() {
           let paymentName = 'Unknown Payment';
           
           if (receipt.paymentAccountId) {
-            const paymentDoc = await getDoc(doc(db, `users/${auth.currentUser!.uid}/paymentAccounts/${receipt.paymentAccountId}`));
-            if (paymentDoc.exists()) {
-              paymentName = paymentDoc.data().name;
+            try {
+              const paymentDoc = await getDoc(doc(db, `users/${auth.currentUser!.uid}/paymentAccounts/${receipt.paymentAccountId}`));
+              if (paymentDoc.exists()) {
+                paymentName = paymentDoc.data().name;
+              }
+            } catch (error) {
+              // Silently fail for individual account fetch to not break the whole list
             }
           }
 
@@ -59,7 +64,7 @@ export function Home() {
       setReceipts(enrichedReceipts);
       setLoading(false);
     }, (error) => {
-      console.error('Error fetching receipts:', error);
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/receipts`);
       setLoading(false);
     });
 
@@ -85,12 +90,20 @@ export function Home() {
             const accountSnap = await getDoc(accountRef);
             
             if (accountSnap.exists()) {
-              await updateDoc(accountRef, { balance: increment(receipt.totalAmount) });
+              try {
+                await updateDoc(accountRef, { balance: increment(receipt.totalAmount) });
+              } catch (error) {
+                handleFirestoreError(error, OperationType.UPDATE, `users/${auth.currentUser!.uid}/paymentAccounts/${receipt.paymentAccountId}`);
+              }
             }
           }
 
           // Delete receipt
-          await deleteDoc(doc(db, `users/${auth.currentUser!.uid}/receipts/${receipt.id}`));
+          try {
+            await deleteDoc(doc(db, `users/${auth.currentUser!.uid}/receipts/${receipt.id}`));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.DELETE, `users/${auth.currentUser!.uid}/receipts/${receipt.id}`);
+          }
           setModalConfig(prev => ({ ...prev, isOpen: false }));
         } catch (error) {
           console.error('Error deleting receipt:', error);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Plus, Trash2, CreditCard, LogOut } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 
@@ -21,6 +22,8 @@ export function Settings() {
     const accountsQ = query(collection(db, `users/${auth.currentUser.uid}/paymentAccounts`));
     const unsubAccounts = onSnapshot(accountsQ, (snapshot) => {
       setAccounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/paymentAccounts`);
     });
 
     return () => {
@@ -33,13 +36,17 @@ export function Settings() {
     if (!newAccountName.trim() || !newAccountBalance || !auth.currentUser) return;
     
     const accountRef = doc(collection(db, `users/${auth.currentUser.uid}/paymentAccounts`));
-    await setDoc(accountRef, {
-      name: newAccountName,
-      type: newAccountType,
-      balance: Number(newAccountBalance),
-      currency: newAccountCurrency,
-      createdAt: new Date().toISOString()
-    });
+    try {
+      await setDoc(accountRef, {
+        name: newAccountName,
+        type: newAccountType,
+        balance: Number(newAccountBalance),
+        currency: newAccountCurrency,
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${auth.currentUser.uid}/paymentAccounts`);
+    }
     
     setNewAccountName('');
     setNewAccountBalance('');
@@ -47,7 +54,11 @@ export function Settings() {
 
   const handleDeleteAccount = async (id: string) => {
     if (!auth.currentUser) return;
-    await deleteDoc(doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${id}`));
+    try {
+      await deleteDoc(doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${id}`));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${auth.currentUser.uid}/paymentAccounts/${id}`);
+    }
   };
 
   return (

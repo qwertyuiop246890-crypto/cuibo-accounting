@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { format, subDays, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { Calendar, Filter, PieChart as PieChartIcon } from 'lucide-react';
@@ -25,10 +26,14 @@ export function Dashboard() {
         const currencies = Array.from(new Set(data.map((r: any) => r.currency || 'JPY')));
         setSelectedCurrency(currencies[0]);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/receipts`);
     });
 
     const unsubAccounts = onSnapshot(collection(db, `users/${auth.currentUser.uid}/paymentAccounts`), (snap) => {
       setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/paymentAccounts`);
     });
 
     return () => { unsubReceipts(); unsubAccounts(); };

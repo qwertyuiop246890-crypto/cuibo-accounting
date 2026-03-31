@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, setDoc, updateDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { ArrowRightLeft, ArrowDown, ArrowUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,6 +20,8 @@ export function Transfer() {
     const q = query(collection(db, `users/${auth.currentUser.uid}/paymentAccounts`));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setAccounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/paymentAccounts`);
     });
 
     return () => unsubscribe();
@@ -33,22 +36,34 @@ export function Transfer() {
       const transferAmount = Number(amount);
       const transferRef = doc(collection(db, `users/${auth.currentUser.uid}/transfers`));
       
+      const fromAcc = accounts.find(a => a.id === fromAccount);
+      const toAcc = accounts.find(a => a.id === toAccount);
+
       // Create transfer record
-      await setDoc(transferRef, {
-        date: new Date().toISOString(),
-        amount: transferAmount,
-        fromAccountId: fromAccount,
-        toAccountId: toAccount,
-        notes: notes,
-        createdAt: new Date().toISOString()
-      });
+      try {
+        await setDoc(transferRef, {
+          date: new Date().toISOString(),
+          amount: transferAmount,
+          fromAccountId: fromAccount,
+          toAccountId: toAccount,
+          currency: fromAcc?.currency || 'JPY',
+          notes: notes,
+          createdAt: new Date().toISOString()
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `users/${auth.currentUser.uid}/transfers`);
+      }
 
       // Update balances
       const fromRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${fromAccount}`);
       const toRef = doc(db, `users/${auth.currentUser.uid}/paymentAccounts/${toAccount}`);
 
-      await updateDoc(fromRef, { balance: increment(-transferAmount) });
-      await updateDoc(toRef, { balance: increment(transferAmount) });
+      try {
+        await updateDoc(fromRef, { balance: increment(-transferAmount) });
+        await updateDoc(toRef, { balance: increment(transferAmount) });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `users/${auth.currentUser.uid}/paymentAccounts`);
+      }
 
       navigate('/');
     } catch (error) {
@@ -74,14 +89,14 @@ export function Transfer() {
           
           {/* Amount */}
           <div className="space-y-2">
-            <label className="block text-[10px] font-bold text-ink/40 uppercase tracking-widest ml-4">轉帳金額 (¥)</label>
+            <label className="block text-[10px] font-bold text-ink/40 uppercase tracking-widest ml-4">轉帳金額 ({accounts.find(a => a.id === fromAccount)?.currency || '¥'})</label>
             <div className="relative">
-              <span className="absolute left-6 top-1/2 -translate-y-1/2 text-ink/20 font-serif text-2xl">¥</span>
+              <span className="absolute left-6 top-1/2 -translate-y-1/2 text-ink/20 font-serif text-2xl">{accounts.find(a => a.id === fromAccount)?.currency || '¥'}</span>
               <input
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-12 pr-6 py-6 bg-background border border-divider rounded-[24px] text-4xl font-serif font-bold text-ink focus:ring-4 focus:ring-primary-blue/10 outline-none transition-all"
+                className="w-full pl-16 pr-6 py-6 bg-background border border-divider rounded-[24px] text-4xl font-serif font-bold text-ink focus:ring-4 focus:ring-primary-blue/10 outline-none transition-all"
                 placeholder="0"
                 required
               />
@@ -103,7 +118,7 @@ export function Transfer() {
                 <option value="" disabled>選擇轉出帳戶</option>
                 {accounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.name} (¥{acc.balance.toLocaleString()})
+                    {acc.name} ({acc.currency} {acc.balance.toLocaleString()})
                   </option>
                 ))}
               </select>
@@ -128,7 +143,7 @@ export function Transfer() {
                 <option value="" disabled>選擇轉入帳戶</option>
                 {accounts.map(acc => (
                   <option key={acc.id} value={acc.id} disabled={acc.id === fromAccount}>
-                    {acc.name} (¥{acc.balance.toLocaleString()})
+                    {acc.name} ({acc.currency} {acc.balance.toLocaleString()})
                   </option>
                 ))}
               </select>

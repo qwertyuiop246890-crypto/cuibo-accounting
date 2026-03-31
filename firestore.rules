@@ -14,6 +14,13 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "guardianxtales@gmail.com" && request.auth.token.email_verified == true ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'client') == 'admin'));
+    }
+
     function hasOnlyAllowedFields(allowedFields) {
       return request.resource.data.keys().hasOnly(allowedFields);
     }
@@ -35,42 +42,47 @@ service cloud.firestore {
     // ===============================================================
     function isValidUser() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['email', 'displayName', 'photoURL']) &&
+      return hasOnlyAllowedFields(['email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
              hasRequiredFields(['email']) &&
              isValidString(data.email, 3, 255) &&
              isValidOptionalString(data.get('displayName', null), 0, 100) &&
-             isValidOptionalString(data.get('photoURL', null), 0, 1000);
+             isValidOptionalString(data.get('photoURL', null), 0, 1000) &&
+             isValidOptionalString(data.get('role', null), 0, 20) &&
+             isValidOptionalString(data.get('createdAt', null), 0, 100);
     }
 
     function isValidPaymentAccount() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['name', 'type', 'balance', 'createdAt']) &&
-             hasRequiredFields(['name', 'type', 'balance', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'type', 'balance', 'currency', 'createdAt']) &&
+             hasRequiredFields(['name', 'type', 'balance', 'currency', 'createdAt']) &&
              isValidString(data.name, 1, 100) &&
-             data.type in ['JPY Cash', 'Credit Card', 'IC Card'] &&
+             isValidString(data.type, 1, 100) &&
+             isValidString(data.currency, 1, 10) &&
              data.balance is number &&
              data.createdAt is string;
     }
 
     function isValidReceipt() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['photoUrl', 'date', 'totalAmount', 'paymentAccountId', 'category', 'subCategory', 'notes', 'createdAt']) &&
+      return hasOnlyAllowedFields(['photoUrl', 'date', 'totalAmount', 'currency', 'paymentAccountId', 'category', 'subCategory', 'notes', 'createdAt']) &&
              hasRequiredFields(['date', 'totalAmount', 'paymentAccountId', 'category', 'createdAt']) &&
              isValidOptionalString(data.get('photoUrl', null), 0, 5000000) &&
              data.date is string &&
              data.totalAmount is number &&
+             isValidOptionalString(data.get('currency', null), 0, 10) &&
              isValidString(data.paymentAccountId, 1, 100) &&
              data.category in ['Business', 'Personal'] &&
-             (data.category == 'Business' || data.get('subCategory', null) in ['Food', 'Clothing', 'Housing', 'Transport', 'Education', 'Entertainment', 'Other']) &&
+             isValidOptionalString(data.get('subCategory', null), 0, 100) &&
              isValidOptionalString(data.get('notes', null), 0, 1000) &&
              data.createdAt is string;
     }
 
     function isValidItem() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['name', 'price', 'quantity', 'notes', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'translatedName', 'price', 'quantity', 'notes', 'createdAt']) &&
              hasRequiredFields(['name', 'price', 'quantity', 'createdAt']) &&
              isValidString(data.name, 1, 200) &&
+             isValidOptionalString(data.get('translatedName', null), 0, 500) &&
              data.price is number &&
              data.quantity is number &&
              isValidOptionalString(data.get('notes', null), 0, 1000) &&
@@ -79,12 +91,13 @@ service cloud.firestore {
 
     function isValidTransfer() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['date', 'amount', 'fromAccountId', 'toAccountId', 'notes', 'createdAt']) &&
+      return hasOnlyAllowedFields(['date', 'amount', 'fromAccountId', 'toAccountId', 'currency', 'notes', 'createdAt']) &&
              hasRequiredFields(['date', 'amount', 'fromAccountId', 'toAccountId', 'createdAt']) &&
              data.date is string &&
              data.amount is number &&
              isValidString(data.fromAccountId, 1, 100) &&
              isValidString(data.toAccountId, 1, 100) &&
+             isValidOptionalString(data.get('currency', null), 0, 10) &&
              isValidOptionalString(data.get('notes', null), 0, 1000) &&
              data.createdAt is string;
     }
@@ -93,36 +106,36 @@ service cloud.firestore {
     // Rules
     // ===============================================================
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser();
-      allow update: if isOwner(userId) && isValidUser();
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser() && request.resource.data.get('role', 'client') == 'client';
+      allow update: if (isOwner(userId) && isValidUser() && request.resource.data.get('role', resource.data.role) == resource.data.role) || isAdmin();
 
       match /paymentAccounts/{accountId} {
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidPaymentAccount();
-        allow update: if isOwner(userId);
-        allow delete: if isOwner(userId);
+        allow update: if (isOwner(userId) && isValidPaymentAccount()) || isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
       }
 
       match /receipts/{receiptId} {
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidReceipt();
-        allow update: if isOwner(userId);
-        allow delete: if isOwner(userId);
+        allow update: if (isOwner(userId) && isValidReceipt()) || isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
 
         match /items/{itemId} {
-          allow read: if isOwner(userId);
+          allow read: if isOwner(userId) || isAdmin();
           allow create: if isOwner(userId) && isValidItem();
-          allow update: if isOwner(userId);
-          allow delete: if isOwner(userId);
+          allow update: if (isOwner(userId) && isValidItem()) || isAdmin();
+          allow delete: if isOwner(userId) || isAdmin();
         }
       }
 
       match /transfers/{transferId} {
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidTransfer();
-        allow update: if isOwner(userId) && isValidTransfer() && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
-        allow delete: if isOwner(userId);
+        allow update: if (isOwner(userId) && isValidTransfer() && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)) || isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
       }
     }
   }
