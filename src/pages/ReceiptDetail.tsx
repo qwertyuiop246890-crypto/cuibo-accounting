@@ -148,11 +148,7 @@ export function ReceiptDetail() {
     }
   }, [items, pendingAiItems]);
 
-  const selectedAccount = useMemo(() => {
-    return accounts.find(a => a.id === receipt.paymentAccountId);
-  }, [accounts, receipt.paymentAccountId]);
-
-  const currencySymbol = selectedAccount?.currency || receipt.currency || 'JPY';
+  const currencySymbol = receipt.currency || 'JPY';
 
   const handleSaveReceipt = async () => {
     if (!auth.currentUser || !receipt.paymentAccountId || !receipt.date) return;
@@ -162,10 +158,8 @@ export function ReceiptDetail() {
       const receiptId = isNew ? doc(collection(db, `users/${auth.currentUser.uid}/receipts`)).id : id!;
       const receiptRef = doc(db, `users/${auth.currentUser.uid}/receipts/${receiptId}`);
       
-      const selectedAccount = accounts.find(a => a.id === receipt.paymentAccountId);
       const receiptData = {
         ...receipt,
-        currency: selectedAccount?.currency || 'JPY',
         date: new Date(receipt.date).toISOString(),
         totalAmount: Number(receipt.totalAmount),
         createdAt: isNew ? new Date().toISOString() : ((await getDoc(receiptRef)).data()?.createdAt || new Date().toISOString())
@@ -732,7 +726,7 @@ export function ReceiptDetail() {
         <div className="bg-card-white p-6 rounded-3xl shadow-sm border border-divider space-y-6">
           <h2 className="text-lg font-serif font-bold text-ink">支付與類別</h2>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div>
               <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">日期時間</label>
               <input
@@ -742,15 +736,31 @@ export function ReceiptDetail() {
                 className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink text-xs"
               />
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">總金額 ({currencySymbol})</label>
-              <input
-                type="number"
-                value={receipt.totalAmount}
-                onChange={e => setReceipt({...receipt, totalAmount: Number(e.target.value)})}
-                disabled={items.length > 0 || pendingAiItems.length > 0}
-                className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none disabled:opacity-50 font-serif font-bold text-ink text-lg"
-              />
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">幣別</label>
+                <select
+                  value={receipt.currency || 'JPY'}
+                  onChange={e => setReceipt({...receipt, currency: e.target.value})}
+                  disabled={items.length > 0 || pendingAiItems.length > 0}
+                  className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink appearance-none disabled:opacity-50"
+                >
+                  <option value="JPY">JPY</option>
+                  <option value="TWD">TWD</option>
+                  <option value="KRW">KRW</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">總金額</label>
+                <input
+                  type="number"
+                  value={receipt.totalAmount}
+                  onChange={e => setReceipt({...receipt, totalAmount: Number(e.target.value)})}
+                  disabled={items.length > 0 || pendingAiItems.length > 0}
+                  className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none disabled:opacity-50 font-serif font-bold text-ink text-lg"
+                />
+              </div>
             </div>
           </div>
 

@@ -92,7 +92,7 @@ export function Dashboard() {
     ].filter(d => d.value > 0);
 
     return { total, business, personal, paymentData, personalData, categoryData };
-  }, [filteredReceipts, accounts]);
+  }, [filteredReceipts, accounts, selectedCurrency]);
 
   const COLORS = ['#AEC8DB', '#957E6B', '#D9C5B2', '#B8C5D6', '#E5D3C5', '#C4D7E0', '#A3B18A'];
 
