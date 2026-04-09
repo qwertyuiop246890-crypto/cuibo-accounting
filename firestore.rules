@@ -53,53 +53,58 @@ service cloud.firestore {
 
     function isValidPaymentAccount() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['name', 'type', 'balance', 'currency', 'createdAt']) &&
-             hasRequiredFields(['name', 'type', 'balance', 'currency', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'type', 'balance', 'currency', 'order', 'createdAt']) &&
+             hasRequiredFields(['name', 'type', 'balance', 'currency']) &&
              isValidString(data.name, 1, 100) &&
              isValidString(data.type, 1, 100) &&
              isValidString(data.currency, 1, 10) &&
              data.balance is number &&
-             data.createdAt is string;
+             (data.get('order', null) == null || data.order is number) &&
+             (data.get('createdAt', null) == null || data.createdAt is string);
     }
 
     function isValidReceipt() {
       let data = request.resource.data;
-      return hasOnlyAllowedFields(['photoUrl', 'date', 'totalAmount', 'currency', 'paymentAccountId', 'category', 'subCategory', 'notes', 'createdAt']) &&
-             hasRequiredFields(['date', 'totalAmount', 'paymentAccountId', 'category', 'createdAt']) &&
+      return hasOnlyAllowedFields(['photoUrl', 'photoUrls', 'storeName', 'date', 'totalAmount', 'totalDiscount', 'totalTaxRefund', 'currency', 'paymentAccountId', 'category', 'subCategory', 'notes', 'createdAt']) &&
+             hasRequiredFields(['date', 'totalAmount', 'paymentAccountId', 'category']) &&
              isValidOptionalString(data.get('photoUrl', null), 0, 5000000) &&
+             (data.get('photoUrls', null) == null || (data.get('photoUrls', []) is list && data.get('photoUrls', []).size() <= 10)) &&
+             isValidOptionalString(data.get('storeName', null), 0, 200) &&
              data.date is string &&
              data.totalAmount is number &&
+             (data.get('totalDiscount', null) == null || data.totalDiscount is number) &&
+             (data.get('totalTaxRefund', null) == null || data.totalTaxRefund is number) &&
              isValidOptionalString(data.get('currency', null), 0, 10) &&
              isValidString(data.paymentAccountId, 1, 100) &&
-             data.category in ['Business', 'Personal'] &&
+             data.category in ['Business', 'Personal', '進貨', '私人'] &&
              isValidOptionalString(data.get('subCategory', null), 0, 100) &&
              isValidOptionalString(data.get('notes', null), 0, 1000) &&
-             data.createdAt is string;
+             (data.get('createdAt', null) == null || data.createdAt is string);
     }
 
     function isValidItem() {
       let data = request.resource.data;
       return hasOnlyAllowedFields(['name', 'translatedName', 'price', 'quantity', 'notes', 'createdAt']) &&
-             hasRequiredFields(['name', 'price', 'quantity', 'createdAt']) &&
+             hasRequiredFields(['name', 'price', 'quantity']) &&
              isValidString(data.name, 1, 200) &&
              isValidOptionalString(data.get('translatedName', null), 0, 500) &&
              data.price is number &&
              data.quantity is number &&
              isValidOptionalString(data.get('notes', null), 0, 1000) &&
-             data.createdAt is string;
+             (data.get('createdAt', null) == null || data.createdAt is string);
     }
 
     function isValidTransfer() {
       let data = request.resource.data;
       return hasOnlyAllowedFields(['date', 'amount', 'fromAccountId', 'toAccountId', 'currency', 'notes', 'createdAt']) &&
-             hasRequiredFields(['date', 'amount', 'fromAccountId', 'toAccountId', 'createdAt']) &&
+             hasRequiredFields(['date', 'amount', 'fromAccountId', 'toAccountId']) &&
              data.date is string &&
              data.amount is number &&
              isValidString(data.fromAccountId, 1, 100) &&
              isValidString(data.toAccountId, 1, 100) &&
              isValidOptionalString(data.get('currency', null), 0, 10) &&
              isValidOptionalString(data.get('notes', null), 0, 1000) &&
-             data.createdAt is string;
+             (data.get('createdAt', null) == null || data.createdAt is string);
     }
 
     // ===============================================================

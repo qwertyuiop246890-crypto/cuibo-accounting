@@ -66,6 +66,8 @@ export function Dashboard() {
     let total = 0;
     let business = 0;
     let personal = 0;
+    let totalDiscount = 0;
+    let totalTaxRefund = 0;
     const paymentUsage: Record<string, number> = {};
     const personalUsage: Record<string, number> = {};
 
@@ -73,11 +75,15 @@ export function Dashboard() {
 
     currencyFiltered.forEach(r => {
       total += r.totalAmount;
-      if (r.category === 'Business') business += r.totalAmount;
-      if (r.category === 'Personal') {
+      totalDiscount += (r.totalDiscount || 0);
+      totalTaxRefund += (r.totalTaxRefund || 0);
+      if (r.category === 'Business' || r.category === '進貨') business += r.totalAmount;
+      if (r.category === 'Personal' || r.category === '私人') {
         personal += r.totalAmount;
-        const subCat = r.subCategory || 'Other';
-        personalUsage[subCat] = (personalUsage[subCat] || 0) + r.totalAmount;
+        const subCat = r.subCategory || '其他';
+        const subMap: Record<string, string> = { 'Food': '飲食', 'Clothing': '服飾', 'Housing': '居住', 'Transport': '交通', 'Education': '教育', 'Entertainment': '娛樂', 'Other': '其他' };
+        const translatedSub = subMap[subCat] || subCat;
+        personalUsage[translatedSub] = (personalUsage[translatedSub] || 0) + r.totalAmount;
       }
 
       const accName = accounts.find(a => a.id === r.paymentAccountId)?.name || 'Unknown';
@@ -91,7 +97,7 @@ export function Dashboard() {
       { name: '私人開銷', value: personal }
     ].filter(d => d.value > 0);
 
-    return { total, business, personal, paymentData, personalData, categoryData };
+    return { total, business, personal, paymentData, personalData, categoryData, totalDiscount, totalTaxRefund };
   }, [filteredReceipts, accounts, selectedCurrency]);
 
   const COLORS = ['#AEC8DB', '#957E6B', '#D9C5B2', '#B8C5D6', '#E5D3C5', '#C4D7E0', '#A3B18A'];
@@ -168,6 +174,19 @@ export function Dashboard() {
           <p className="text-ink/40 text-[10px] font-bold uppercase tracking-widest mb-2">私人開銷</p>
           <p className="text-2xl font-serif font-bold text-ink">{selectedCurrency} {stats.personal.toLocaleString()}</p>
         </div>
+
+        {(stats.totalDiscount > 0 || stats.totalTaxRefund > 0) && (
+          <>
+            <div className="bg-card-white p-6 rounded-3xl shadow-sm border border-divider">
+              <p className="text-ink/40 text-[10px] font-bold uppercase tracking-widest mb-2">總折扣金額</p>
+              <p className="text-2xl font-serif font-bold text-green-600">{selectedCurrency} {stats.totalDiscount.toLocaleString()}</p>
+            </div>
+            <div className="bg-card-white p-6 rounded-3xl shadow-sm border border-divider">
+              <p className="text-ink/40 text-[10px] font-bold uppercase tracking-widest mb-2">總退稅金額</p>
+              <p className="text-2xl font-serif font-bold text-blue-600">{selectedCurrency} {stats.totalTaxRefund.toLocaleString()}</p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Category Comparison Chart */}

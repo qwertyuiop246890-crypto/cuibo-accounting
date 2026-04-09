@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, getDoc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, getDoc, deleteDoc, updateDoc, increment, getDocs } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { format } from 'date-fns';
@@ -29,6 +29,64 @@ export function Home() {
 
   useEffect(() => {
     if (!auth.currentUser) return;
+
+    // Migration Script for English to Chinese Categories
+    const runMigration = async () => {
+      try {
+        const uid = auth.currentUser!.uid;
+        
+        // Migrate Receipts
+        const receiptsSnap = await getDocs(collection(db, `users/${uid}/receipts`));
+        receiptsSnap.forEach(async (document) => {
+          const data = document.data();
+          let needsUpdate = false;
+          const updates: any = {};
+
+          if (data.category === 'Business') { updates.category = '進貨'; needsUpdate = true; }
+          if (data.category === 'Personal') { updates.category = '私人'; needsUpdate = true; }
+
+          const subCategoryMap: Record<string, string> = {
+            'Food': '飲食', 'Clothing': '服飾', 'Housing': '居住',
+            'Transport': '交通', 'Education': '教育', 'Entertainment': '娛樂', 'Other': '其他'
+          };
+          if (data.subCategory && subCategoryMap[data.subCategory]) {
+            updates.subCategory = subCategoryMap[data.subCategory];
+            needsUpdate = true;
+          }
+
+          if (needsUpdate) {
+            await updateDoc(doc(db, `users/${uid}/receipts/${document.id}`), updates);
+          }
+        });
+
+        // Migrate Payment Accounts
+        const accountsSnap = await getDocs(collection(db, `users/${uid}/paymentAccounts`));
+        accountsSnap.forEach(async (document) => {
+          const data = document.data();
+          let needsUpdate = false;
+          const updates: any = {};
+
+          const typeMap: Record<string, string> = {
+            'JPY Cash': '日幣現金',
+            'Credit Card': '信用卡',
+            'IC Card': '交通卡'
+          };
+
+          if (data.type && typeMap[data.type]) {
+            updates.type = typeMap[data.type];
+            needsUpdate = true;
+          }
+
+          if (needsUpdate) {
+            await updateDoc(doc(db, `users/${uid}/paymentAccounts/${document.id}`), updates);
+          }
+        });
+      } catch (error) {
+        console.error("Migration failed", error);
+      }
+    };
+    
+    runMigration();
 
     const q = query(
       collection(db, `users/${auth.currentUser.uid}/receipts`),
@@ -202,16 +260,19 @@ export function Home() {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <div className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          receipt.category === 'Business' 
+                          (receipt.category === 'Business' || receipt.category === '進貨')
                             ? 'bg-[#E5D3C5] text-[#957E6B]' 
                             : 'bg-[#C4D7E0] text-[#5A7D9A]'
                         }`}>
-                          {receipt.category === 'Business' ? '進貨' : '私人'}
+                          {(receipt.category === 'Business' || receipt.category === '進貨') ? '進貨' : '私人'}
                         </div>
                         <span className="text-[10px] font-bold text-ink/40 uppercase tracking-widest">
                           {format(new Date(receipt.date), 'MM/dd HH:mm')}
                         </span>
                       </div>
+                      {receipt.storeName && (
+                        <p className="font-bold text-ink text-sm mb-0.5 truncate max-w-[150px]">{receipt.storeName}</p>
+                      )}
                       <div className="flex flex-col gap-0.5 text-xs text-ink/70 font-medium">
                         <div className="flex items-center gap-1">
                           <CreditCard className="w-3 h-3 text-ink/30" />

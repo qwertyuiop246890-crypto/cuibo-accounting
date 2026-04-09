@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, setDoc, collection, onSnapshot, query, deleteDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, onSnapshot, query, deleteDoc, updateDoc, increment, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Camera, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Sparkles, X } from 'lucide-react';
@@ -20,8 +20,8 @@ const compressImage = (file: File): Promise<string> => {
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1024;
-        const MAX_HEIGHT = 1024;
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
         let width = img.width;
         let height = img.height;
 
@@ -40,7 +40,7 @@ const compressImage = (file: File): Promise<string> => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
+        resolve(canvas.toDataURL('image/jpeg', 0.5));
       };
       img.onerror = (error) => reject(error);
     };
@@ -61,11 +61,13 @@ export function ReceiptDetail() {
     date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     totalAmount: 0,
     paymentAccountId: '',
-    category: 'Business',
-    subCategory: 'Food',
+    category: '進貨',
+    subCategory: '飲食',
     currency: 'JPY',
     notes: '',
-    photoUrl: ''
+    photoUrl: '',
+    photoUrls: [] as string[],
+    storeName: ''
   });
 
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -97,11 +99,16 @@ export function ReceiptDetail() {
     if (!auth.currentUser) return;
 
     // Fetch Accounts
-    const unsubAccounts = onSnapshot(collection(db, `users/${auth.currentUser.uid}/paymentAccounts`), (snap) => {
-      setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/paymentAccounts`);
-    });
+    const unsubAccounts = onSnapshot(
+      collection(db, `users/${auth.currentUser.uid}/paymentAccounts`), 
+      (snap) => {
+        const accountsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const sortedAccounts = accountsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+        setAccounts(sortedAccounts);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/paymentAccounts`);
+      }
+    );
 
     return () => { unsubAccounts(); };
   }, []);
@@ -115,14 +122,18 @@ export function ReceiptDetail() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setReceipt({
-          date: data.date.slice(0, 16),
-          totalAmount: data.totalAmount,
-          paymentAccountId: data.paymentAccountId,
-          category: data.category,
-          subCategory: data.subCategory || 'Food',
+          date: data.date ? data.date.slice(0, 16) : '',
+          totalAmount: data.totalAmount || 0,
+          paymentAccountId: data.paymentAccountId || '',
+          category: data.category || '進貨',
+          subCategory: data.subCategory || '飲食',
           currency: data.currency || 'JPY',
           notes: data.notes || '',
-          photoUrl: data.photoUrl || ''
+          photoUrl: data.photoUrl || '',
+          photoUrls: data.photoUrls || [],
+          storeName: data.storeName || '',
+          totalDiscount: data.totalDiscount || 0,
+          totalTaxRefund: data.totalTaxRefund || 0
         });
         setOriginalTotalAmount(data.totalAmount);
         setOriginalAccountId(data.paymentAccountId);
@@ -138,6 +149,35 @@ export function ReceiptDetail() {
     fetchReceipt();
     return () => unsubItems();
   }, [id, isNew]);
+
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      if (uploading || !auth.currentUser) return;
+      
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        // Create a synthetic event object to reuse handleFileChange logic
+        const syntheticEvent = {
+          target: { files: imageFiles }
+        } as unknown as React.ChangeEvent<HTMLInputElement>;
+        
+        await handleFileChange(syntheticEvent);
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [uploading, auth.currentUser, receipt]); // Dependencies for handlePaste
 
   // Auto-calculate total from items if any exist
   useEffect(() => {
@@ -230,14 +270,9 @@ export function ReceiptDetail() {
       }
 
       if (isNew) {
-        navigate(`/receipt/${receiptId}`, { replace: true });
+        navigate('/', { replace: true });
       } else {
-        setModalConfig({
-          isOpen: true,
-          title: '儲存成功',
-          message: '單據資訊已更新。',
-          type: 'success'
-        });
+        navigate('/', { replace: true });
       }
     } catch (error) {
       console.error("Error saving receipt:", error);
@@ -345,51 +380,62 @@ export function ReceiptDetail() {
   const [uploadStatus, setUploadStatus] = useState('');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !auth.currentUser) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !auth.currentUser) return;
 
     setUploading(true);
     setUploadProgress(10);
-    setUploadStatus('壓縮照片中...');
+    setUploadStatus(`壓縮 ${files.length} 張照片中...`);
 
     try {
-      const compressedDataUrl = await compressImage(file);
-      setReceipt(prev => ({ ...prev, photoUrl: compressedDataUrl }));
+      const compressedDataUrls = await Promise.all(files.map((file: File) => compressImage(file)));
+      
+      setReceipt(prev => ({ 
+        ...prev, 
+        photoUrl: compressedDataUrls[0], // Keep first for backward compatibility
+        photoUrls: compressedDataUrls 
+      }));
       
       setUploadProgress(30);
       setUploadStatus('AI 辨識中...');
 
-      const base64Data = compressedDataUrl.split(',')[1];
-      const mimeType = compressedDataUrl.split(';')[0].split(':')[1];
+      const parts: any[] = compressedDataUrls.map(dataUrl => {
+        const base64Data = dataUrl.split(',')[1];
+        const mimeType = dataUrl.split(';')[0].split(':')[1];
+        return {
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType
+          }
+        };
+      });
 
       const prompt = `
-        Analyze this receipt. Extract the date (YYYY-MM-DDTHH:mm format), total amount, and a list of items.
+        Analyze these receipt images. They might be parts of the same long receipt. Extract the store name (storeName), date (YYYY-MM-DDTHH:mm format), total amount, and a list of items.
         For each item, extract the original name (name) and translate it to Traditional Chinese (translatedName).
+        IMPORTANT: 
+        1. If there is tax (e.g., VAT, GST, 消費稅) listed on the receipt, you MUST include it as a separate item in the items list.
+        2. If there are discounts (e.g., 値引, discount, coupon) listed, you MUST include them as separate items with a NEGATIVE price (e.g., -660).
+        This ensures that the sum of the items equals the total amount.
         If you cannot find a date, omit it. If you cannot find items, return an empty array.
+        Also, calculate the total discount amount (totalDiscount) and total tax refund/tax free amount (totalTaxRefund) as POSITIVE numbers. If none, set to 0.
       `;
+
+      parts.push({ text: prompt });
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: mimeType
-              }
-            },
-            {
-              text: prompt
-            }
-          ]
-        },
+        contents: { parts },
         config: {
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
+              storeName: { type: Type.STRING, description: "Name of the store/shop" },
               date: { type: Type.STRING },
               totalAmount: { type: Type.NUMBER },
+              totalDiscount: { type: Type.NUMBER, description: "Total discount amount (positive number). 0 if none." },
+              totalTaxRefund: { type: Type.NUMBER, description: "Total tax refund or tax free amount (positive number). 0 if none." },
               items: {
                 type: Type.ARRAY,
                 items: {
@@ -414,9 +460,13 @@ export function ReceiptDetail() {
       
       const newReceiptData = {
         ...receipt,
-        photoUrl: compressedDataUrl,
+        photoUrl: compressedDataUrls[0],
+        photoUrls: compressedDataUrls,
+        storeName: result.storeName || receipt.storeName,
         totalAmount: result.totalAmount || receipt.totalAmount,
         date: result.date ? result.date.slice(0, 16) : receipt.date,
+        totalDiscount: result.totalDiscount || 0,
+        totalTaxRefund: result.totalTaxRefund || 0
       };
 
       setReceipt(newReceiptData);
@@ -471,6 +521,7 @@ export function ReceiptDetail() {
           type="file" 
           accept="image/*" 
           capture="environment"
+          multiple
           ref={fileInputRef} 
           onChange={handleFileChange} 
           className="hidden" 
@@ -480,6 +531,7 @@ export function ReceiptDetail() {
         <input 
           type="file" 
           accept="image/*" 
+          multiple
           ref={galleryInputRef} 
           onChange={handleFileChange} 
           className="hidden" 
@@ -524,6 +576,12 @@ export function ReceiptDetail() {
               <span className="text-sm font-bold text-ink">從相簿選擇</span>
             </button>
           </div>
+          
+          {!uploading && (
+            <div className="text-center text-[10px] font-bold text-ink/40 uppercase tracking-widest mt-2">
+              💡 提示：您也可以直接在此頁面貼上 (Ctrl+V / Cmd+V) 截圖或複製的圖片
+            </div>
+          )}
 
           {uploading && (
             <div className="w-full h-48 bg-background rounded-3xl border-2 border-dashed border-divider flex flex-col items-center justify-center overflow-hidden relative">
@@ -540,7 +598,27 @@ export function ReceiptDetail() {
             </div>
           )}
 
-          {receipt.photoUrl && !uploading && (
+          {receipt.photoUrls && receipt.photoUrls.length > 0 && !uploading && (
+            <div className="flex gap-4 overflow-x-auto pb-2 snap-x">
+              {receipt.photoUrls.map((url, idx) => (
+                <div 
+                  key={idx}
+                  className="min-w-[80%] h-48 bg-background rounded-3xl border-2 border-dashed border-divider flex-shrink-0 flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer snap-center"
+                  onClick={() => setShowFullImage(true)} // Note: currently just shows the first image in full screen, could be improved to show a specific one
+                >
+                  <img src={url} alt={`Receipt ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-ink/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Sparkles className="w-8 h-8 text-white" />
+                    <span className="text-white font-bold ml-2">點擊放大</span>
+                  </div>
+                  <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded-full font-bold">
+                    {idx + 1} / {receipt.photoUrls.length}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {receipt.photoUrl && (!receipt.photoUrls || receipt.photoUrls.length === 0) && !uploading && (
             <div 
               className="w-full h-48 bg-background rounded-3xl border-2 border-dashed border-divider flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer"
               onClick={() => setShowFullImage(true)}
@@ -724,9 +802,19 @@ export function ReceiptDetail() {
 
         {/* Basic Info Form (Payment Section) */}
         <div className="bg-card-white p-6 rounded-3xl shadow-sm border border-divider space-y-6">
-          <h2 className="text-lg font-serif font-bold text-ink">支付與類別</h2>
+          <h2 className="text-lg font-serif font-bold text-ink">基本資訊</h2>
           
           <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">商店名稱</label>
+              <input
+                type="text"
+                placeholder="例如：7-11, 餐廳名稱"
+                value={receipt.storeName || ''}
+                onChange={e => setReceipt({...receipt, storeName: e.target.value})}
+                className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink text-sm"
+              />
+            </div>
             <div>
               <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">日期時間</label>
               <input
@@ -762,6 +850,28 @@ export function ReceiptDetail() {
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">總折扣 (選填)</label>
+                <input
+                  type="number"
+                  value={receipt.totalDiscount || ''}
+                  onChange={e => setReceipt({...receipt, totalDiscount: Number(e.target.value)})}
+                  className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-serif font-bold text-green-600 text-sm"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">總退稅 (選填)</label>
+                <input
+                  type="number"
+                  value={receipt.totalTaxRefund || ''}
+                  onChange={e => setReceipt({...receipt, totalTaxRefund: Number(e.target.value)})}
+                  className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-serif font-bold text-blue-600 text-sm"
+                  placeholder="0"
+                />
+              </div>
+            </div>
           </div>
 
           <div>
@@ -786,11 +896,11 @@ export function ReceiptDetail() {
                 onChange={e => setReceipt({...receipt, category: e.target.value})}
                 className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink appearance-none"
               >
-                <option value="Business">進貨 (Business)</option>
-                <option value="Personal">私人 (Personal)</option>
+                <option value="進貨">進貨</option>
+                <option value="私人">私人</option>
               </select>
             </div>
-            {receipt.category === 'Personal' && (
+            {(receipt.category === 'Personal' || receipt.category === '私人') && (
               <div>
                 <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">子類別</label>
                 <input
@@ -801,7 +911,7 @@ export function ReceiptDetail() {
                   placeholder="輸入或選擇類別"
                 />
                 <datalist id="personal-categories">
-                  {['Food', 'Clothing', 'Housing', 'Transport', 'Education', 'Entertainment', 'Other'].map(cat => (
+                  {['飲食', '服飾', '居住', '交通', '教育', '娛樂', '其他'].map(cat => (
                     <option key={cat} value={cat} />
                   ))}
                 </datalist>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, setDoc, updateDoc, increment, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { ArrowRightLeft, ArrowDown, ArrowUp } from 'lucide-react';
@@ -17,9 +17,11 @@ export function Transfer() {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    const q = query(collection(db, `users/${auth.currentUser.uid}/paymentAccounts`));
+    const q = collection(db, `users/${auth.currentUser.uid}/paymentAccounts`);
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setAccounts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const accountsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const sortedAccounts = accountsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+      setAccounts(sortedAccounts);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/paymentAccounts`);
     });

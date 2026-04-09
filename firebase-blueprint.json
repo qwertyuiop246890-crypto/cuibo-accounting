@@ -20,9 +20,10 @@
         "type": { "type": "string" },
         "balance": { "type": "number" },
         "currency": { "type": "string", "description": "Currency code like JPY, TWD, USD" },
+        "order": { "type": "number", "description": "Display order of the account" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "type", "balance", "currency", "createdAt"]
+      "required": ["name", "type", "balance", "currency"]
     },
     "Receipt": {
       "title": "Receipt",
@@ -30,16 +31,20 @@
       "type": "object",
       "properties": {
         "photoUrl": { "type": "string" },
+        "photoUrls": { "type": "array", "items": { "type": "string" } },
+        "storeName": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
         "totalAmount": { "type": "number" },
         "currency": { "type": "string" },
         "paymentAccountId": { "type": "string" },
-        "category": { "type": "string", "enum": ["Business", "Personal"] },
-        "subCategory": { "type": "string", "enum": ["Food", "Clothing", "Housing", "Transport", "Education", "Entertainment", "Other"] },
+        "category": { "type": "string", "enum": ["進貨", "私人"] },
+        "subCategory": { "type": "string", "enum": ["飲食", "服飾", "居住", "交通", "教育", "娛樂", "其他"] },
         "notes": { "type": "string" },
+        "totalDiscount": { "type": "number", "description": "Total discount amount" },
+        "totalTaxRefund": { "type": "number", "description": "Total tax refund amount" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["date", "totalAmount", "paymentAccountId", "category", "createdAt"]
+      "required": ["date", "totalAmount", "paymentAccountId", "category"]
     },
     "Item": {
       "title": "Item",
@@ -53,7 +58,7 @@
         "notes": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "price", "quantity", "createdAt"]
+      "required": ["name", "price", "quantity"]
     },
     "Transfer": {
       "title": "Transfer",
@@ -67,7 +72,7 @@
         "notes": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["date", "amount", "fromAccountId", "toAccountId", "createdAt"]
+      "required": ["date", "amount", "fromAccountId", "toAccountId"]
     }
   },
   "firestore": {
