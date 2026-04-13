@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, onSnapshot, query, deleteDoc, updateDoc, increment, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
-import { Camera, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Sparkles, X } from 'lucide-react';
+import { Camera, Save, Plus, Trash2, ArrowLeft, Image as ImageIcon, Sparkles, X, ClipboardPaste } from 'lucide-react';
 import { format } from 'date-fns';
 import { GoogleGenAI, Type } from '@google/genai';
 import { Modal } from '../components/ui/Modal';
@@ -178,6 +178,46 @@ export function ReceiptDetail() {
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
   }, [uploading, auth.currentUser, receipt]); // Dependencies for handlePaste
+
+  const handlePasteFromClipboard = async () => {
+    if (uploading || !auth.currentUser) return;
+    
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      const imageFiles: File[] = [];
+      for (const clipboardItem of clipboardItems) {
+        for (const type of clipboardItem.types) {
+          if (type.startsWith('image/')) {
+            const blob = await clipboardItem.getType(type);
+            const file = new File([blob], "pasted-image.png", { type });
+            imageFiles.push(file);
+          }
+        }
+      }
+      
+      if (imageFiles.length > 0) {
+        const syntheticEvent = {
+          target: { files: imageFiles }
+        } as unknown as React.ChangeEvent<HTMLInputElement>;
+        await handleFileChange(syntheticEvent);
+      } else {
+        setModalConfig({
+          isOpen: true,
+          title: '剪貼簿無圖片',
+          message: '您的剪貼簿中沒有圖片，請先複製圖片後再試。',
+          type: 'error'
+        });
+      }
+    } catch (err) {
+      console.error("Failed to read clipboard contents: ", err);
+      setModalConfig({
+        isOpen: true,
+        title: '無法讀取剪貼簿',
+        message: '請允許瀏覽器讀取剪貼簿權限，或直接使用鍵盤 Ctrl+V / Cmd+V 貼上。',
+        type: 'error'
+      });
+    }
+  };
 
   // Auto-calculate total from items if any exist
   useEffect(() => {
@@ -411,14 +451,19 @@ export function ReceiptDetail() {
       });
 
       const prompt = `
-        Analyze these receipt images. They might be parts of the same long receipt. Extract the store name (storeName), date (YYYY-MM-DDTHH:mm format), total amount, and a list of items.
-        For each item, extract the original name (name) and translate it to Traditional Chinese (translatedName).
-        IMPORTANT: 
-        1. If there is tax (e.g., VAT, GST, 消費稅) listed on the receipt, you MUST include it as a separate item in the items list.
-        2. If there are discounts (e.g., 値引, discount, coupon) listed, you MUST include them as separate items with a NEGATIVE price (e.g., -660).
-        This ensures that the sum of the items equals the total amount.
-        If you cannot find a date, omit it. If you cannot find items, return an empty array.
-        Also, calculate the total discount amount (totalDiscount) and total tax refund/tax free amount (totalTaxRefund) as POSITIVE numbers. If none, set to 0.
+        [角色任務]：你是一名精準的財務數據分析專家，專精於從多國語言的收據照片中萃取結構化資料。
+        [背景資訊]：使用者上傳了一張或多張收據照片（可能為長收據的拼接）。需要將這些圖像轉換為精確的 JSON 財務數據，以供記帳系統使用。
+        [具體指令]：
+        1. 提取商店名稱 (storeName)、日期 (date, 格式 YYYY-MM-DDTHH:mm) 與 總金額 (totalAmount)。
+        2. 提取所有購買項目 (items)。必須「同時保留」原始名稱與翻譯：將收據上的原文完全照抄填入 (name)，並將其精確翻譯為繁體中文填入 (translatedName)。兩者皆須提供，單價填入 (price)，數量填入 (quantity)。
+        3. 獨立列出稅金：若收據包含稅金 (如 VAT, GST, 消費稅)，必須將其作為獨立的 item 列出。
+        4. 獨立列出折扣：若包含折扣 (如 値引, discount, coupon)，必須將其作為獨立的 item 列出，且單價必須為「負數」(例如 -660)。
+        5. 統計總額：計算總折扣金額 (totalDiscount) 與 總退稅/免稅金額 (totalTaxRefund)，兩者皆須為「正數」，若無則填 0。
+        [約束條件與內部事實查核]：
+        - 【證據優先】：僅依據圖片中『確切已知』的文字與數字輸出，嚴禁使用『可能、應該、或許』等模糊推測或編造。
+        - 【允許留白】：若對某個欄位（如日期、商店名稱）的辨識信心水準低於 90%，或圖片中缺乏該資訊，請直接留空 (空字串或省略)，絕對不要硬猜。
+        - 確保所有 items 的金額加總（包含負數折扣與正數稅金）完全等於 totalAmount。
+        - 輸出必須是符合 Schema 的純 JSON 格式，且翻譯必須使用繁體中文。
       `;
 
       parts.push({ text: prompt });
@@ -554,26 +599,36 @@ export function ReceiptDetail() {
 
         {/* Photo Section */}
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             <button 
               onClick={!uploading ? handlePhotoUpload : undefined}
               disabled={uploading}
-              className={`w-full h-36 bg-card-white rounded-3xl border border-divider flex flex-col items-center justify-center overflow-hidden relative group shadow-sm transition-all ${!uploading ? 'cursor-pointer hover:shadow-md hover:border-primary-blue/30 active:scale-95' : 'opacity-50'}`}
+              className={`w-full h-32 bg-card-white rounded-3xl border border-divider flex flex-col items-center justify-center overflow-hidden relative group shadow-sm transition-all ${!uploading ? 'cursor-pointer hover:shadow-md hover:border-primary-blue/30 active:scale-95' : 'opacity-50'}`}
             >
-              <div className="bg-background p-4 rounded-2xl mb-3 group-hover:bg-primary-blue/10 transition-colors">
-                <Camera className="w-8 h-8 text-primary-blue" />
+              <div className="bg-background p-3 rounded-2xl mb-2 group-hover:bg-primary-blue/10 transition-colors">
+                <Camera className="w-6 h-6 text-primary-blue" />
               </div>
-              <span className="text-sm font-bold text-ink">拍照</span>
+              <span className="text-xs font-bold text-ink">拍照</span>
             </button>
             <button 
               onClick={!uploading ? handleGalleryUpload : undefined}
               disabled={uploading}
-              className={`w-full h-36 bg-card-white rounded-3xl border border-divider flex flex-col items-center justify-center overflow-hidden relative group shadow-sm transition-all ${!uploading ? 'cursor-pointer hover:shadow-md hover:border-primary-blue/30 active:scale-95' : 'opacity-50'}`}
+              className={`w-full h-32 bg-card-white rounded-3xl border border-divider flex flex-col items-center justify-center overflow-hidden relative group shadow-sm transition-all ${!uploading ? 'cursor-pointer hover:shadow-md hover:border-primary-blue/30 active:scale-95' : 'opacity-50'}`}
             >
-              <div className="bg-background p-4 rounded-2xl mb-3 group-hover:bg-primary-blue/10 transition-colors">
-                <ImageIcon className="w-8 h-8 text-primary-blue" />
+              <div className="bg-background p-3 rounded-2xl mb-2 group-hover:bg-primary-blue/10 transition-colors">
+                <ImageIcon className="w-6 h-6 text-primary-blue" />
               </div>
-              <span className="text-sm font-bold text-ink">從相簿選擇</span>
+              <span className="text-xs font-bold text-ink">相簿</span>
+            </button>
+            <button 
+              onClick={!uploading ? handlePasteFromClipboard : undefined}
+              disabled={uploading}
+              className={`w-full h-32 bg-card-white rounded-3xl border border-divider flex flex-col items-center justify-center overflow-hidden relative group shadow-sm transition-all ${!uploading ? 'cursor-pointer hover:shadow-md hover:border-primary-blue/30 active:scale-95' : 'opacity-50'}`}
+            >
+              <div className="bg-background p-3 rounded-2xl mb-2 group-hover:bg-primary-blue/10 transition-colors">
+                <ClipboardPaste className="w-6 h-6 text-primary-blue" />
+              </div>
+              <span className="text-xs font-bold text-ink">貼上</span>
             </button>
           </div>
           
