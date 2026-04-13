@@ -70,6 +70,7 @@ export function Dashboard() {
     let totalTaxRefund = 0;
     const paymentUsage: Record<string, number> = {};
     const personalUsage: Record<string, number> = {};
+    const businessUsage: Record<string, number> = {};
 
     const currencyFiltered = filteredReceipts.filter(r => (r.currency || 'JPY') === selectedCurrency);
 
@@ -77,7 +78,11 @@ export function Dashboard() {
       total += r.totalAmount;
       totalDiscount += (r.totalDiscount || 0);
       totalTaxRefund += (r.totalTaxRefund || 0);
-      if (r.category === 'Business' || r.category === '進貨') business += r.totalAmount;
+      if (r.category === 'Business' || r.category === '進貨') {
+        business += r.totalAmount;
+        const subCat = r.subCategory || '商品成本';
+        businessUsage[subCat] = (businessUsage[subCat] || 0) + r.totalAmount;
+      }
       if (r.category === 'Personal' || r.category === '私人') {
         personal += r.totalAmount;
         const subCat = r.subCategory || '其他';
@@ -92,12 +97,13 @@ export function Dashboard() {
 
     const paymentData = Object.entries(paymentUsage).map(([name, value]) => ({ name, value }));
     const personalData = Object.entries(personalUsage).map(([name, value]) => ({ name, value }));
+    const businessData = Object.entries(businessUsage).map(([name, value]) => ({ name, value }));
     const categoryData = [
       { name: '進貨支出', value: business },
       { name: '私人開銷', value: personal }
     ].filter(d => d.value > 0);
 
-    return { total, business, personal, paymentData, personalData, categoryData, totalDiscount, totalTaxRefund };
+    return { total, business, personal, paymentData, personalData, businessData, categoryData, totalDiscount, totalTaxRefund };
   }, [filteredReceipts, accounts, selectedCurrency]);
 
   const COLORS = ['#AEC8DB', '#957E6B', '#D9C5B2', '#B8C5D6', '#E5D3C5', '#C4D7E0', '#A3B18A'];
@@ -301,6 +307,45 @@ export function Dashboard() {
         ) : (
           <div className="h-48 flex items-center justify-center text-ink/30 text-sm font-medium">
             該期間尚無私人支出紀錄
+          </div>
+        )}
+      </div>
+
+      {/* Business Expense Breakdown Chart */}
+      <div className="bg-card-white p-8 rounded-[40px] shadow-sm border border-divider">
+        <h2 className="text-lg font-serif font-bold text-ink mb-8 flex items-center gap-2 uppercase tracking-widest">
+          <PieChartIcon className="w-5 h-5 text-primary-blue" />
+          進貨支出佔比
+        </h2>
+        
+        {stats.businessData.length > 0 ? (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={stats.businessData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {stats.businessData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: number) => `${selectedCurrency} ${value.toLocaleString()}`}
+                  contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 4px 20px rgba(149, 126, 107, 0.1)', backgroundColor: '#FFFFFF' }}
+                />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '20px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-48 flex items-center justify-center text-ink/30 text-sm font-medium">
+            該期間尚無進貨支出紀錄
           </div>
         )}
       </div>
