@@ -955,23 +955,22 @@ export function ReceiptDetail() {
                 <option value="私人">私人</option>
               </select>
             </div>
-            {(receipt.category === 'Personal' || receipt.category === '私人') && (
-              <div>
-                <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">子類別</label>
-                <input
-                  list="personal-categories"
-                  value={receipt.subCategory}
-                  onChange={e => setReceipt({...receipt, subCategory: e.target.value})}
-                  className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink"
-                  placeholder="輸入或選擇類別"
-                />
-                <datalist id="personal-categories">
-                  {['飲食', '服飾', '居住', '交通', '教育', '娛樂', '其他'].map(cat => (
-                    <option key={cat} value={cat} />
-                  ))}
-                </datalist>
-              </div>
-            )}
+            <div>
+              <label className="block text-[10px] font-bold text-ink/40 mb-1.5 uppercase tracking-widest">子類別</label>
+              <input
+                list="sub-categories"
+                value={receipt.subCategory}
+                onChange={e => setReceipt({...receipt, subCategory: e.target.value})}
+                className="w-full p-4 bg-background border border-divider rounded-2xl focus:ring-2 focus:ring-primary-blue outline-none font-bold text-ink"
+                placeholder="輸入或選擇類別"
+              />
+              <datalist id="sub-categories">
+                {(receipt.category === 'Personal' || receipt.category === '私人') 
+                  ? ['飲食', '服飾', '居住', '交通', '教育', '娛樂', '其他'].map(cat => <option key={cat} value={cat} />)
+                  : ['商品成本', '交通', '住宿', '餐飲', '雜支', '其他'].map(cat => <option key={cat} value={cat} />)
+                }
+              </datalist>
+            </div>
           </div>
 
           <button
